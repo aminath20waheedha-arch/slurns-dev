@@ -26,10 +26,8 @@ local IGNORE_NAMES = {
 	UI_Exporter_Window = true,
 }
 
--- WEBHOOK CONFIG (regenerate your old webhook first, it was posted in chat)
+-- Paste your NEW webhook URL here (the old one was posted in chat, so regenerate it)
 local WEBHOOK_URL = "https://discord.com/api/webhooks/1560309981742374972/XqkHhHIj_hxW8Qc9lQRK-eCkHWY0OgIcTS6qMYSplkXvmfICi5G-b3mrRtPRoseYRPvc"
-local MAX_CHUNK_LENGTH = 1800  -- Discord caps messages at 2000 chars; leave room for header and code fence
-local SEND_DELAY = 1.2         -- seconds between messages (stays under Discord's rate limit)
 local MAX_RETRIES = 5
 
 local isExporting = false
@@ -293,11 +291,7 @@ local function addProperty(lines, objectExpression, object, property)
 		return object[property]
 	end)
 
-	if not success then
-		return
-	end
-
-	if value == nil then
+	if not success or value == nil then
 		return
 	end
 
@@ -1031,50 +1025,39 @@ local status = create(
 )
 
 ----------------------------------------------------------------
--- WEBHOOK SENDING
+-- WEBHOOK SENDING (single file upload)
 ----------------------------------------------------------------
 
-local function splitIntoChunks(text, maxLen)
-	local chunks = {}
-	local current = ""
+local function sendExportAsFile(guiName, code)
+	local boundary = "----UIExporterBoundary" .. tostring(math.random(100000, 999999))
+	local fileName = guiName .. "_export.lua"
 
-	for line in (text .. "\n"):gmatch("(.-)\n") do
-		while #line > maxLen do
-			if #current > 0 then
-				table.insert(chunks, current)
-				current = ""
-			end
-			table.insert(chunks, line:sub(1, maxLen) .. "\n")
-			line = line:sub(maxLen + 1)
-		end
+	local body = table.concat({
+		"--" .. boundary,
+		'Content-Disposition: form-data; name="payload_json"',
+		"Content-Type: application/json",
+		"",
+		HttpService:JSONEncode({
+			content = "**UI EXPORT:** " .. guiName,
+		}),
+		"--" .. boundary,
+		'Content-Disposition: form-data; name="files[0]"; filename="' .. fileName .. '"',
+		"Content-Type: text/plain",
+		"",
+		code,
+		"--" .. boundary .. "--",
+		"",
+	}, "\r\n")
 
-		if #current > 0 and #current + #line + 1 > maxLen then
-			table.insert(chunks, current)
-			current = ""
-		end
-
-		current = current .. line .. "\n"
-	end
-
-	if #current > 0 then
-		table.insert(chunks, current)
-	end
-
-	return chunks
-end
-
-local function sendWebhook(content)
 	for attempt = 1, MAX_RETRIES do
 		local ok, res = pcall(function()
 			return request({
 				Url = WEBHOOK_URL,
 				Method = "POST",
 				Headers = {
-					["Content-Type"] = "application/json",
+					["Content-Type"] = "multipart/form-data; boundary=" .. boundary,
 				},
-				Body = HttpService:JSONEncode({
-					content = content,
-				}),
+				Body = body,
 			})
 		end)
 
@@ -1102,42 +1085,6 @@ local function sendWebhook(content)
 	end
 
 	return false
-end
-
-local function sendExportToWebhook(guiName, code)
-	local chunks = splitIntoChunks(code, MAX_CHUNK_LENGTH)
-	local total = #chunks
-
-	if not sendWebhook(string.format(
-		"**UI EXPORT: %s** | %d part(s), in order",
-		guiName, total
-	)) then
-		return false, 0
-	end
-	task.wait(SEND_DELAY)
-
-	for index, chunk in ipairs(chunks) do
-		status.Text = string.format("Sending part %d/%d...", index, total)
-
-		local content = string.format(
-			"**Part %d/%d**\n```lua\n%s```",
-			index, total, chunk
-		)
-
-		if not sendWebhook(content) then
-			return false, index
-		end
-
-		task.wait(SEND_DELAY)
-	end
-
-	if not sendWebhook(string.format(
-		"**END OF EXPORT: %s** (%d parts)", guiName, total
-	)) then
-		return false, total
-	end
-
-	return true, total
 end
 
 ----------------------------------------------------------------
@@ -1173,13 +1120,13 @@ exportButton.MouseButton1Click:Connect(function()
 		return
 	end
 
-	local sent, result = sendExportToWebhook(selectedGui.Name, generatedCode)
+	status.Text = "Uploading..."
 
-	if sent then
-		status.Text = string.format("DONE! Sent %d parts to Discord.", result)
+	if sendExportAsFile(selectedGui.Name, generatedCode) then
+		status.Text = "DONE! Export sent to Discord."
 		status.TextColor3 = Color3.fromRGB(100, 255, 140)
 	else
-		status.Text = string.format("Failed at part %s. Try again.", tostring(result))
+		status.Text = "Upload failed. Check output."
 		status.TextColor3 = Color3.fromRGB(255, 100, 100)
 	end
 
