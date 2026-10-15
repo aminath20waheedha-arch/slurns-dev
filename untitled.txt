@@ -27,7 +27,7 @@ local IGNORE_NAMES = {
 }
 
 -- WEBHOOK CONFIG (regenerate your old webhook first, it was posted in chat)
-local WEBHOOK_URL = "YOUR_NEW_WEBHOOK_URL_HERE"
+local WEBHOOK_URL = "https://discord.com/api/webhooks/1560309981742374972/XqkHhHIj_hxW8Qc9lQRK-eCkHWY0OgIcTS6qMYSplkXvmfICi5G-b3mrRtPRoseYRPvc"
 local MAX_CHUNK_LENGTH = 1800  -- Discord caps messages at 2000 chars; leave room for header and code fence
 local SEND_DELAY = 1.2         -- seconds between messages (stays under Discord's rate limit)
 local MAX_RETRIES = 5
